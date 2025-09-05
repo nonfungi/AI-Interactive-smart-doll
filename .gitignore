@@ -1,0 +1,27 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Test cache
+.pytest_cache/
+
+# IDE and OS files
+.vscode/
+.idea/
+*.DS_Store
+
+# Environment variables
+.env
+
+# Database data folders
+postgres_data/
+qdrant_data/
+
+# Temporary media files
+*.mp3
+*.wav
