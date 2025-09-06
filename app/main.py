@@ -17,7 +17,8 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 
 from .config import settings
-from .services import get_ai_response, transcribe_audio, convert_text_to_speech
+# --- FIX: Import the new Google service functions ---
+from .services import transcribe_audio, get_gemini_response, convert_text_to_speech_google
 from .database import AsyncSessionLocal
 from .models import User, Child, Doll
 
@@ -225,29 +226,23 @@ async def talk(
     Handles a full voice conversation turn:
     1. Receives audio from the doll.
     2. Transcribes audio to text.
-    3. Gets a contextual AI response.
-    4. Converts the response text back to audio.
+    3. Gets a contextual AI response using Google Gemini.
+    4. Converts the response text back to audio using Google TTS.
     5. Streams the audio back to the doll.
     """
-    # --- DEBUGGING: Print the tokens to see what the server receives ---
-    print("--- Token Comparison ---")
-    print(f"Token from request header: '{x_auth_token}'")
-    print(f"Token from .env settings:  '{settings.doll_master_auth_token}'")
-    print("------------------------")
-
     if x_auth_token != settings.doll_master_auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token.")
 
-    # 1. Transcribe Audio to Text
+    # 1. Transcribe Audio to Text (using Whisper)
     transcribed_text = await transcribe_audio(audio_file)
     print(f"Transcribed text for child '{child_id}': {transcribed_text}")
 
-    # 2. Get AI Response
-    ai_response_text = await get_ai_response(user_text=transcribed_text, child_id=child_id)
+    # 2. Get AI Response (using Google Gemini)
+    ai_response_text = await get_gemini_response(user_text=transcribed_text, child_id=child_id)
     print(f"AI response for child '{child_id}': {ai_response_text}")
 
-    # 3. Convert Text to Speech
-    response_audio_bytes = await convert_text_to_speech(ai_response_text)
+    # 3. Convert Text to Speech (using Google TTS)
+    response_audio_bytes = await convert_text_to_speech_google(ai_response_text)
 
     # 4. Stream Audio Back
     return StreamingResponse(io.BytesIO(response_audio_bytes), media_type="audio/mpeg")
@@ -255,3 +250,4 @@ async def talk(
 # --- Main Execution ---
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=settings.api_port, reload=True)
+

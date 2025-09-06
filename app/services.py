@@ -1,28 +1,27 @@
-# app/services.py
-
-import tempfile
 import os
+import tempfile
 from fastapi import UploadFile
 from openai import OpenAI
-import requests
-import io
+import google.generativeai as genai
+from google.cloud import texttospeech
 
-from langchain_openai import ChatOpenAI
 from .config import settings
 from .memory import memory_manager
 
-# Initialize clients once
-llm = ChatOpenAI(openai_api_key=settings.openai_api_key, model_name="gpt-3.5-turbo")
+# --- Initialize clients once ---
+# We still use OpenAI for Whisper, as it's excellent for transcription.
 openai_client = OpenAI(api_key=settings.openai_api_key)
 
-# --- FINAL UPDATE: Using a reliable and compatible model ---
-HF_API_URL = "https://api-inference.huggingface.co/models/karim23657/persian-tts-vits"
-HF_HEADERS = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
+# Configure Google clients with the new API key
+genai.configure(api_key=settings.google_api_key)
+gemini_model = genai.GenerativeModel('gemini-1.5-flash') # A fast and capable model
+tts_client = texttospeech.TextToSpeechClient()
 
 
 async def transcribe_audio(audio_file: UploadFile) -> str:
     """
     Converts an audio file to text using OpenAI's Whisper model.
+    (This function remains unchanged)
     """
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
         content = await audio_file.read()
@@ -35,50 +34,60 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
     os.remove(tmp_file_path)
     return transcription.text
 
-async def convert_text_to_speech(text: str) -> bytes:
+
+async def convert_text_to_speech_google(text: str) -> bytes:
     """
-    Converts text to Persian speech using a reliable model on Hugging Face.
+    Converts text to Persian speech using Google Cloud TTS.
     """
-    payload = {"inputs": text}
+    synthesis_input = texttospeech.SynthesisInput(text=text)
     
-    # Send the request to the Hugging Face Inference API
-    response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload)
+    # Configure the voice request for a natural Persian voice
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="fa-IR",
+        ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
+    )
     
-    if response.status_code == 200:
-        # The response content is the raw audio bytes
-        return response.content
-    else:
-        # Handle errors
-        print(f"Error from Hugging Face API: {response.status_code}")
-        print(f"Response: {response.text}")
-        raise Exception("Failed to generate speech from Hugging Face API.")
+    # Select the type of audio file you want (MP3 is common)
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3
+    )
+    
+    # Perform the text-to-speech request
+    response = tts_client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+    
+    return response.audio_content
 
 
-async def get_ai_response(user_text: str, child_id: str) -> str:
+async def get_gemini_response(user_text: str, child_id: str) -> str:
     """
-    Gets a response from the AI model, including context from memory.
+    Gets a response from the Gemini model, including context from memory.
     """
     relevant_memories = await memory_manager.search_memory(
         child_id=child_id,
         query_text=user_text
     )
 
+    # A more detailed and robust prompt for Gemini
     prompt = f"""
-    You are a friendly, curious, and safe companion for a child named {child_id}.
-    Your name is 'Abenek' and you are a blue robot.
-    Always respond in Persian.
+    You are 'Abenek', a friendly, curious, and safe blue robot companion for a child.
+    Your personality is warm, encouraging, and a little bit playful.
+    Always respond in clear and simple Persian. Your goal is to spark imagination and learning.
     
-    Here is some of your past conversation history with {child_id}:
+    Here is some of your past conversation history with this child:
     ---
     {relevant_memories}
     ---
     
     Now, continue the conversation. The child just said: '{user_text}'
+    Your response in Persian:
     """
     
-    ai_message = await llm.ainvoke(prompt)
-    ai_text = ai_message.content
+    response = await gemini_model.generate_content_async(prompt)
+    ai_text = response.text
 
+    # Save the new interaction to memory
     await memory_manager.save_to_memory(
         child_id=child_id,
         user_text=user_text,
