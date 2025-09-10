@@ -1,26 +1,31 @@
-# app/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import datetime
 
 class Settings(BaseSettings):
-    # All variables should be lowercase here
-    api_port: int = 8001
-    doll_master_auth_token: str
-    openai_api_key: str
-    qdrant_url: str
-    qdrant_api_key: str
+    # Database configuration
     database_url: str
+
+    # JWT authentication settings
     jwt_secret_key: str
     jwt_algorithm: str
-    huggingface_api_key: str 
-    google_api_key: str
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8"
-    )
 
-    @property
-    def current_time(self) -> str:
-        return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    # API Keys for external services
+    openai_api_key: str
+    qdrant_url: str
+    qdrant_api_key: str | None = None
+    google_api_key: str
+    huggingface_api_key: str | None = None # Optional, depending on future use
+
+    # Master token for doll hardware authentication
+    doll_master_auth_token: str
+
+    # --- NEW: Google Cloud Service Account Credentials ---
+    # This will hold the content of the service account JSON file.
+    google_credentials_json: str | None = None
+
+    # Server configuration
+    api_port: int = 8001
+
+    class Config:
+        env_file = ".env"
 
 settings = Settings()
