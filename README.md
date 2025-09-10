@@ -1,3 +1,8 @@
+---
+title: AI Interactive Smart Doll
+sdk: docker
+app_port: 8001
+---
 # AI Interactive Smart Doll - Backend API
 
 Welcome to the backend repository for the **AI Interactive Smart Doll**, a sophisticated conversational AI designed to be an engaging and educational companion. This project currently functions as a **web-first API**, allowing interaction via voice through a web client, with future plans for integration into a physical hardware device.
