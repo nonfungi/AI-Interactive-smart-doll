@@ -1,0 +1,48 @@
+# render.yaml
+services:
+  # 1. سرویس دیتابیس PostgreSQL
+  - type: pserv
+    name: doll-postgres-db
+    runtime: docker
+    repo: https://github.com/postgres/postgres # This is a placeholder, Render provides managed PG
+    plan: free # Use the free plan for the database
+    databaseName: doll_db
+    user: doll_user
+
+  # 2. سرویس دیتابیس برداری Qdrant
+  - type: pserv # Private Service, not exposed to the public internet
+    name: doll-qdrant-db
+    runtime: docker
+    repo: https://github.com/qdrant/qdrant # Placeholder, we use the official image
+    dockerImage: qdrant/qdrant:latest
+    plan: free # Use the free instance type
+
+  # 3. سرویس اصلی اپلیکیشن FastAPI
+  - type: web
+    name: AI-Interactive-smart-doll
+    runtime: docker
+    repo: https://github.com/nonfungi/AI-Interactive-smart-doll # Your GitHub repo
+    dockerfilePath: ./Dockerfile
+    plan: free # Use the free plan for the web service
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: doll-postgres-db # Automatically gets the connection string from the DB service
+          property: connectionString
+      - key: QDRANT_URL
+        fromService:
+          type: pserv
+          name: doll-qdrant-db # Automatically gets the internal URL of the Qdrant service
+          property: hostport
+      - key: PYTHON_VERSION
+        value: 3.11.4 # Specify Python version if needed
+      # --- ADD YOUR SECRETS HERE ---
+      - key: DOLL_MASTER_AUTH_TOKEN
+        sync: false # Tells Render to not show this value in logs
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
