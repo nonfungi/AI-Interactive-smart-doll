@@ -1,15 +1,18 @@
-# app/database.py
-
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import settings
 
-# Create an asynchronous engine to connect to the database
-engine = create_async_engine(settings.database_url)
+# --- FIX: Modify the database URL to use the asyncpg driver ---
+# We replace "postgresql://" with "postgresql+asyncpg://"
+# This tells SQLAlchemy to use the newly installed asyncpg library.
+ASYNC_DATABASE_URL = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")
 
-# Create a class that our session-making factory will use
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+engine = create_async_engine(ASYNC_DATABASE_URL)
 
-# A base class for our declarative models
-class Base(DeclarativeBase):
-    pass
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+Base = declarative_base()
