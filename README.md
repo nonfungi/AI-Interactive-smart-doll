@@ -5,6 +5,7 @@ app_port: 8001
 ---
 # AI Interactive Smart Doll - Backend API
 
+
 Welcome to the backend repository for the **AI Interactive Smart Doll**, a sophisticated conversational AI designed to be an engaging and educational companion. This project currently functions as a **web-first API**, allowing interaction via voice through a web client, with future plans for integration into a physical hardware device.
 
 ## 🌟 Project Overview
@@ -67,3 +68,4 @@ This project is fully containerized, making the local setup incredibly simple.
     If you need to create the database tables manually, you can run the `create_tables.py` script. Make sure the database container is running first.
 
     *Note: The `docker-compose.yml` is configured to map the PostgreSQL port `5432` inside the container to `5433` on your host machine. The script `create_tables.py` is already configured for this.*
+
