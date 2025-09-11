@@ -1,27 +1,20 @@
-# app/routers/conversation.py
-
 import io
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status, Header, UploadFile, File, Form
+from fastapi import APIRouter, Header, Form, UploadFile, File, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
-from ..services import transcribe_audio, get_gemini_response, convert_text_to_speech_google
-from ..schemas import AuthRequest
+from ..services import (
+    transcribe_audio, 
+    get_gemini_response, 
+    convert_text_to_speech_google,
+    AIServiceError  # وارد کردن استثناء سفارشی
+)
 
 router = APIRouter()
 
-@router.post("/auth/doll", tags=["Authentication"])
-async def authenticate_doll(request: AuthRequest):
-    if request.auth_token == settings.doll_master_auth_token:
-        return {"status": "ok", "message": "Doll authenticated successfully."}
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token."
-        )
-
+# --- اندپوینت مکالمه با مدیریت خطای بهبودیافته ---
 @router.post("/talk", tags=["Conversation"])
 async def talk(
     x_auth_token: Annotated[str, Header(description="The secret master token for the doll.")],
@@ -33,45 +26,37 @@ async def talk(
     """
     if x_auth_token != settings.doll_master_auth_token:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Invalid authentication token."
         )
 
     try:
-        # 1. Transcribe Audio to Text
+        # ۱. تبدیل صدا به متن
         transcribed_text = await transcribe_audio(audio_file)
         print(f"Transcribed text for child '{child_id}': {transcribed_text}")
 
-        # 2. Get AI Response
+        # ۲. دریافت پاسخ هوش مصنوعی
         ai_response_text = await get_gemini_response(user_text=transcribed_text, child_id=child_id)
         print(f"AI response for child '{child_id}': {ai_response_text}")
 
-        # 3. Convert Text to Speech
+        # ۳. تبدیل متن به صدا
         response_audio_bytes = await convert_text_to_speech_google(ai_response_text)
 
-        # 4. Stream Audio Back
+        # ۴. ارسال پاسخ صوتی
         return StreamingResponse(io.BytesIO(response_audio_bytes), media_type="audio/mpeg")
 
+    except AIServiceError as e:
+        # این بخش خطاهای مشخص سرویس‌های هوش مصنوعی را مدیریت می‌کند
+        print(f"A handled AI service error occurred: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"An error occurred with an AI service: {e}"
+        )
     except Exception as e:
-        # --- NEW: Robust Error Handling ---
-        # If any step in the process fails, log the error and send a
-        # pre-defined, friendly audio message back to the user.
-        print(f"An error occurred during the conversation pipeline: {e}")
-        
-        error_message = "اوپس، الان نمیتونم فکر کنم. میشه چند لحظه دیگه دوباره امتحان کنی؟"
-        
-        try:
-            # Attempt to generate an audio error message
-            error_audio_bytes = await convert_text_to_speech_google(error_message)
-            return StreamingResponse(
-                io.BytesIO(error_audio_bytes),
-                media_type="audio/mpeg",
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-        except Exception as tts_error:
-            # If even the TTS service fails, return a standard JSON error
-            print(f"Failed to generate TTS for error message: {tts_error}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="A critical error occurred in the AI services."
-            )
+        # این بخش برای خطاهای پیش‌بینی نشده دیگر است
+        print(f"An unexpected critical error occurred in /talk endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="A critical unexpected error occurred in the conversation pipeline."
+        )
+

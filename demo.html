@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دموی عروسک هوشمند</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            touch-action: manipulation; /* Improves mobile experience */
+        }
+        .pulse {
+            animation: pulse-animation 1.5s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-md p-8 space-y-8 text-center bg-gray-800 rounded-2xl shadow-lg">
+        
+        <div class="flex flex-col items-center">
+             <svg class="w-20 h-20 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
+            </svg>
+            <h1 class="text-4xl font-bold text-blue-300 mt-4">دموی زنده عروسک هوشمند</h1>
+            <p id="status" class="mt-2 text-lg text-gray-400">برای شروع صحبت، دکمه زیر را فشار دهید</p>
+        </div>
+
+        <button id="recordButton" class="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center transition-all duration-300 ease-in-out transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-blue-500">
+            <svg id="micIcon" class="w-12 h-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 016 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+        </button>
+
+        <div id="playerContainer" class="hidden">
+            <p class="font-semibold mb-2">پاسخ عروسک:</p>
+            <audio id="audioPlayer" controls class="w-full"></audio>
+        </div>
+    </div>
+
+    <script>
+        // --- Settings ---
+        const API_URL = "https://inirafaila-ai-interactive-smart-doll.hf.space/talk";
+        // --- IMPORTANT: Replace with your actual token ---
+        const AUTH_TOKEN = "5f8b3c9a6d1e7f0a9b8c2d5e3f4a7b9c1d0e8f7a6b5c4d3e2f1a0b9c8d7e6f5"; 
+        const CHILD_ID = "web_demo_user_01"; // A static ID for the demo user
+
+        // --- Page Elements ---
+        const recordButton = document.getElementById('recordButton');
+        const status = document.getElementById('status');
+        const micIcon = document.getElementById('micIcon');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playerContainer = document.getElementById('playerContainer');
+
+        let isRecording = false;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        // --- Main function to toggle recording ---
+        async function toggleRecording() {
+            if (isRecording) {
+                // --- Stop Recording ---
+                mediaRecorder.stop();
+                isRecording = false;
+                recordButton.classList.remove('bg-red-600', 'pulse');
+                recordButton.classList.add('bg-blue-600');
+                status.textContent = 'در حال پردازش صدا... لطفاً صبر کنید';
+                micIcon.classList.remove('animate-pulse');
+
+            } else {
+                // --- Start Recording ---
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    isRecording = true;
+                    audioChunks = []; // Clear chunks for new recording
+                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = sendAudioToServer;
+
+                    mediaRecorder.start();
+                    
+                    // --- Update UI ---
+                    recordButton.classList.remove('bg-blue-600');
+                    recordButton.classList.add('bg-red-600', 'pulse');
+                    status.textContent = 'در حال گوش دادن... صحبت کنید';
+                    micIcon.classList.add('animate-pulse');
+                    playerContainer.classList.add('hidden'); // Hide previous player
+
+                } catch (error) {
+                    console.error("Error accessing microphone:", error);
+                    status.textContent = 'خطا! امکان دسترسی به میکروفون وجود ندارد.';
+                }
+            }
+        }
+        
+        // --- Function to send audio to server ---
+        async function sendAudioToServer() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            
+            const formData = new FormData();
+            formData.append('audio_file', audioBlob, 'recording.webm');
+            formData.append('child_id', CHILD_ID);
+
+            status.textContent = 'در حال ارسال صدا و دریافت پاسخ از هوش مصنوعی...';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'x-auth-token': AUTH_TOKEN
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`خطای سرور: ${errorData.detail || response.statusText}`);
+                }
+
+                const responseAudioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(responseAudioBlob);
+                audioPlayer.src = audioUrl;
+                playerContainer.classList.remove('hidden');
+                audioPlayer.play();
+                status.textContent = 'برای صحبت دوباره، دکمه را فشار دهید';
+
+            } catch (error) {
+                console.error('Error communicating with the server:', error);
+                status.textContent = `خطا در ارتباط با سرور. ${error.message}`;
+            }
+        }
+
+        recordButton.addEventListener('click', toggleRecording);
+    </script>
+</body>
+</html>
+
