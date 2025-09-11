@@ -35,10 +35,10 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
             content = await audio_file.read()
             tmp_file.write(content)
             tmp_file_path = tmp_file.name
-
+        
         with open(tmp_file_path, "rb") as f:
             transcription = openai_client.audio.transcriptions.create(model="whisper-1", file=f)
-
+        
         os.remove(tmp_file_path)
         return transcription.text
     except Exception as e:
@@ -49,15 +49,13 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
 async def convert_text_to_speech_gtts(text: str) -> bytes:
     """
     تبدیل متن به گفتار فارسی با استفاده از کتابخانه ساده gTTS.
-    این تابع به هیچ کلید یا احراز هویتی نیاز ندارد.
     """
     try:
-        # gTTS یک کتابخانه همگام (sync) است. برای استفاده در محیط async،
-        # آن را در یک executor جداگانه اجرا می‌کنیم تا برنامه مسدود نشود.
         loop = asyncio.get_running_loop()
-
+        
         def tts_sync():
-            tts = gTTS(text=text, lang='fa', slow=False)
+            # FIX: Add lang_check=False to bypass the faulty language validation
+            tts = gTTS(text=text, lang='fa', slow=False, lang_check=False)
             fp = io.BytesIO()
             tts.write_to_fp(fp)
             fp.seek(0)
@@ -65,7 +63,7 @@ async def convert_text_to_speech_gtts(text: str) -> bytes:
 
         audio_bytes = await loop.run_in_executor(None, tts_sync)
         return audio_bytes
-
+        
     except Exception as e:
         print(f"An unexpected error occurred in gTTS: {e}")
         raise AIServiceError(f"An unexpected error occurred in gTTS: {e}")
@@ -85,16 +83,16 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
         You are 'Abenek', a friendly, curious, and safe blue robot companion for a child.
         Your personality is warm, encouraging, and a little bit playful.
         Always respond in clear and simple Persian. Your goal is to spark imagination and learning.
-
+        
         Here is some of your past conversation history with this child:
         ---
         {relevant_memories}
         ---
-
+        
         Now, continue the conversation. The child just said: '{user_text}'
         Your response in Persian:
         """
-
+        
         response = await gemini_model.generate_content_async(prompt)
         ai_text = response.text
 
@@ -103,7 +101,7 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
             user_text=user_text,
             ai_text=ai_text
         )
-
+        
         return ai_text
     except google_exceptions.GoogleAPICallError as e:
         print(f"Google Generative AI API Error: {e}")
@@ -114,3 +112,4 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
     except Exception as e:
         print(f"An unexpected error occurred in Gemini response generation: {e}")
         raise AIServiceError(f"An unexpected error occurred in Gemini response generation: {e}")
+
