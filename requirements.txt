@@ -13,3 +13,4 @@ pytest
 google-generativeai
 openai
 gTTS
+pydantic-settings
