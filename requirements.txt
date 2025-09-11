@@ -16,3 +16,5 @@ gTTS
 pydantic-settings
 pydantic[email]
 elevenlabs
+google-cloud-texttospeech>=2.16
+

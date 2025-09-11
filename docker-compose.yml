@@ -8,6 +8,7 @@ services:
       - "8001:8001"
     volumes:
       - ./app:/app/app # Mount the app directory for live reloading
+      - ./credentials.json:/app/credentials.json:ro
     env_file:
       - ./.env
     depends_on:
@@ -28,6 +29,7 @@ services:
       - POSTGRES_USER=doll_user
       - POSTGRES_PASSWORD=mysecretpassword
       - POSTGRES_DB=doll_db
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
 
   #Qdrant
   qdrant:

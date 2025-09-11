@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     # Database configuration
     database_url: str
@@ -25,6 +26,14 @@ class Settings(BaseSettings):
     # Server configuration
     api_port: int = 8001
 
+    class Config:
+        env_file = ".env"
+
+class Settings(BaseSettings):
+    ...
+    gcp_tts_voice: str | None = None   # مثلا fa-IR-Standard-A
+    gcp_tts_rate: float | None = None  # مثلا 1.0
+    gcp_tts_pitch: float | None = None # مثلا 0.0
     class Config:
         env_file = ".env"
 

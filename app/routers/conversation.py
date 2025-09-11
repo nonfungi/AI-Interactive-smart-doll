@@ -1,11 +1,16 @@
+# app/routers/conversation.py
 import io
 from typing import Annotated
-
 from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
-from ..services import transcribe_audio, get_gemini_response, AIServiceError, convert_text_to_speech_gtts
+from ..services import (
+    transcribe_audio,
+    get_gemini_response,
+    AIServiceError,
+    convert_text_to_speech_gcloud
+)
 
 router = APIRouter()
 
@@ -16,33 +21,29 @@ async def talk(
     audio_file: UploadFile = File(...)
 ):
     """
-    یک چرخه کامل مکالمه صوتی را مدیریت می‌کند.
+    چرخه کامل: Audio → Text → (LLM) → Text → TTS → MP3 Stream
     """
     if x_auth_token != settings.doll_master_auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token.")
 
     try:
-        # 1. تبدیل صدا به متن
+        # 1) STT
         transcribed_text = await transcribe_audio(audio_file)
-        print(f"Transcribed text for child '{child_id}': {transcribed_text}")
+        if not transcribed_text or not transcribed_text.strip():
+            raise AIServiceError("Empty transcription")
 
-        # 2. دریافت پاسخ هوش مصنوعی
+        # 2) LLM پاسخ
         ai_response_text = await get_gemini_response(user_text=transcribed_text, child_id=child_id)
-        print(f"AI response for child '{child_id}': {ai_response_text}")
 
-        # 3. تبدیل متن پاسخ به صدا با gTTS
-        response_audio_bytes = await convert_text_to_speech_gtts(ai_response_text)
+        # 3) TTS با Google Cloud
+        response_audio_bytes = await convert_text_to_speech_gcloud(ai_response_text)
 
-        # 4. استریم کردن پاسخ صوتی
+        # 4) استریم خروجی MP3
         return StreamingResponse(io.BytesIO(response_audio_bytes), media_type="audio/mpeg")
 
     except AIServiceError as e:
-        # این یک خطای مدیریت شده از سرویس‌های هوش مصنوعی ماست
-        print(f"A handled AI service error occurred: {e}")
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"A critical error occurred in the AI services: {e}")
-    
+        # خطای قابل پیش‌بینی سرویس‌های AI
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:
-        # این یک خطای پیش‌بینی نشده در سرور است
-        print(f"An unhandled exception occurred: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected internal server error occurred.")
-
+        # خطای داخلی غیرمنتظره
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
