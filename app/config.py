@@ -1,15 +1,16 @@
 # app/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 class Settings(BaseSettings):
-    # pydantic v2 style
+    # با این پیکربندی، lowercase و uppercase هر دو پذیرفته می‌شن
     model_config = SettingsConfigDict(
         env_file=".env",
-        case_sensitive=False  # <- env ها را case-insensitive می‌کند (lowercase شما OK است)
+        case_sensitive=False
     )
 
     # Database configuration
-    database_url: str
+    database_url: str = Field(..., alias="DATABASE_URL")
 
     # JWT authentication settings
     jwt_secret_key: str
