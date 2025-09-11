@@ -1,45 +1,54 @@
-# app/main.py
-
+import uvicorn
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from .database import AsyncSessionLocal, engine, Base
+
+# --- Import routers and database components ---
+from .database import engine, Base
 from .routers import users, children, dolls, conversation
 
-# --- Lifespan Event Handler ---
+# --- Lifespan Event Handler (for startup and shutdown events) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Handles application startup and shutdown events.
-    On startup, it can be used to initialize resources like database connections.
-    On shutdown, it can be used for cleanup.
+    On startup, it ensures that all necessary database tables are created.
     """
     print("Server starting up...")
-    # You could add database table creation here if you wanted it to run on startup
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
-    yield
+    
+    # --- NEW: Create database tables on startup ---
+    async with engine.begin() as conn:
+        # This command connects to the database and runs the SQL to create
+        # all tables that are defined in models.py, but only if they don't already exist.
+        await conn.run_sync(Base.metadata.create_all)
+        print("Database tables checked/created successfully.")
+        
+    yield # The application runs here
+    
     print("Server shutting down...")
 
 # --- App Initialization ---
 app = FastAPI(
     title="AI Interactive Smart Doll API",
-    description="The core API for the smart storytelling toy, now refactored for clarity and scalability.",
-    version="0.2.0",
-    lifespan=lifespan
+    description="The core API for the smart storytelling toy.",
+    version="0.1.0",
+    lifespan=lifespan # Use the lifespan handler
 )
 
-# --- Include Routers ---
-# By including routers, we keep the main file clean and delegate endpoint logic
-# to specialized modules.
-app.include_router(users.router)
-app.include_router(children.router)
-app.include_router(dolls.router)
-app.include_router(conversation.router)
+# --- Include API Routers ---
+# This makes the main file clean and organizes endpoints into separate files.
+app.include_router(users.router, prefix="/users", tags=["Users"])
+app.include_router(children.router, prefix="/children", tags=["Children"])
+app.include_router(dolls.router, prefix="/dolls", tags=["Dolls"])
+app.include_router(conversation.router, tags=["Conversation"])
 
 
 @app.get("/", tags=["Health Check"])
 async def root():
-    """
-    A simple health check endpoint to confirm the API is running.
-    """
+    """A simple health check endpoint to confirm the API is running."""
     return {"status": "ok", "message": "Welcome to the AI Interactive Smart Doll API!"}
+
+# --- Main Execution Block (for local development) ---
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8001, reload=True)
+
