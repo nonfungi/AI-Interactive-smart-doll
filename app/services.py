@@ -68,10 +68,10 @@ async def convert_text_to_speech_google(text: str) -> bytes:
     try:
         synthesis_input = texttospeech.SynthesisInput(text=text)
         
-        # --- اصلاح: مشخص کردن یک صدای فارسی باکیفیت WaveNet ---
+        # --- اصلاح نهایی: استفاده از یک صدای استاندارد و موجود ---
         voice = texttospeech.VoiceSelectionParams(
             language_code="fa-IR",
-            name="fa-IR-Wavenet-D" # 'D' یک صدای مردانه و 'A' یک صدای زنانه است
+            name="fa-IR-Standard-A" # 'A' یک صدای استاندارد زنانه است
         )
         
         audio_config = texttospeech.AudioConfig(
