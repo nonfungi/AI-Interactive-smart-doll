@@ -15,3 +15,4 @@ openai
 gTTS
 pydantic-settings
 pydantic[email]
+elevenlabs
