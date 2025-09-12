@@ -28,14 +28,15 @@ def initialize_db():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     
-    # --- FIX: Robustly remove the 'sslmode' parameter ---
-    # The asyncpg driver handles SSL automatically and does not accept 'sslmode'.
-    # We parse the URL, remove the sslmode query parameter, and rebuild it.
+    # --- FIX: Robustly remove unsupported URL parameters ---
+    # The asyncpg driver handles SSL automatically and does not accept 'sslmode' or 'channel_binding'.
+    # We parse the URL, remove the unsupported query parameters, and rebuild it.
     parsed_url = urlparse(db_url)
     query_params = parse_qs(parsed_url.query)
     query_params.pop('sslmode', None)  # Remove sslmode if it exists
+    query_params.pop('channel_binding', None) # Remove channel_binding if it exists
     
-    # Rebuild the URL without the sslmode parameter
+    # Rebuild the URL without the unsupported parameters
     cleaned_query = urlencode(query_params, doseq=True)
     db_url_cleaned = urlunparse(parsed_url._replace(query=cleaned_query))
 
@@ -66,4 +67,3 @@ async def get_db() -> AsyncSession:
             yield session
         finally:
             await session.close()
-
