@@ -1,90 +1,89 @@
 # app/routers/conversation.py
 import io
 from typing import Annotated
-
-from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-# Import the specific services and custom exception needed
+# Import the AI service functions and the custom exception
 from ..services import (
     transcribe_audio, 
     get_gemini_response, 
     convert_text_to_speech_elevenlabs,
     AIServiceError
 )
-# Import the settings getter function
-from ..config import get_settings
+# Import the settings getter to validate the master token
+from ..config import get_settings, Settings
 
-# --- Router Setup ---
-# All endpoints defined here will be prefixed with /conversation
+# Create a new router for conversation-related endpoints
 router = APIRouter(
-    prefix="/conversation",
     tags=["Conversation"]
 )
 
-
-@router.post("/talk")
-async def talk(
-    # Use Annotated for cleaner dependency injection and metadata
-    x_auth_token: Annotated[str, Header(description="The secret master token for the doll.")],
-    child_id: Annotated[str, Form(description="The unique identifier for the child.")],
-    audio_file: UploadFile = File(..., description="The audio file of the child's speech (.webm format recommended).")
-):
+# --- Dependency for master token authentication ---
+async def verify_master_token(x_auth_token: Annotated[str, Form()], settings: Settings = Depends(get_settings)) -> bool:
     """
-    Handles a full voice conversation turn:
-    1. Authenticates the device.
-    2. Transcribes user audio to text (Whisper).
-    3. Gets a contextual AI response (Gemini with RAG from Qdrant).
-    4. Converts the response text back to audio (ElevenLabs).
-    5. Streams the audio back to the client.
+    Dependency that checks if the provided master token is valid.
+    This is a simple form of authentication suitable for the hardware.
     """
-    settings = get_settings()
-
-    # --- 1. Authentication ---
-    # Simple master token authentication for the hardware
     if x_auth_token != settings.doll_master_auth_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid authentication token."
+            detail="Invalid authentication token for doll."
         )
+    return True
 
-    # --- 2. AI Processing Pipeline ---
+# --- The main conversation endpoint ---
+@router.post("/talk")
+async def talk(
+    # Use the dependency to protect this endpoint
+    token_verified: Annotated[bool, Depends(verify_master_token)],
+    # Receive child_id and audio_file as form data
+    child_id: Annotated[str, Form()], 
+    audio_file: UploadFile = File(...)
+):
+    """
+    Handles a full voice conversation turn:
+    1. Receives audio and authenticates the request.
+    2. Transcribes audio to text (Whisper).
+    3. Gets a contextual AI response (Gemini).
+    4. Converts the response text back to audio (ElevenLabs).
+    5. Streams the audio back to the client.
+    """
+    print(f"Received audio for child_id: {child_id}")
     try:
-        # Transcribe the incoming audio file to text
-        print(f"Received audio for child '{child_id}'. Transcribing...")
+        # Step 1: Transcribe Audio to Text
         transcribed_text = await transcribe_audio(audio_file)
         print(f"Transcribed text: '{transcribed_text}'")
 
-        # Get a contextual response from the generative AI model
-        print("Getting AI response from Gemini...")
+        # Step 2: Get AI Response
         ai_response_text = await get_gemini_response(
             user_text=transcribed_text, 
             child_id=child_id
         )
-        print(f"AI response text: '{ai_response_text}'")
+        print(f"AI response: '{ai_response_text}'")
 
-        # Convert the AI's text response back into speech
-        print("Converting response to speech with ElevenLabs...")
+        # Step 3: Convert Text to Speech
         response_audio_bytes = await convert_text_to_speech_elevenlabs(ai_response_text)
-        print("Speech conversion successful.")
+        print("Successfully generated speech audio from ElevenLabs.")
 
-        # --- 3. Stream Audio Response ---
-        # Stream the generated audio bytes back to the client
+        # Step 4: Stream Audio Back
+        # StreamingResponse is efficient for sending binary data like audio.
         return StreamingResponse(io.BytesIO(response_audio_bytes), media_type="audio/mpeg")
 
     except AIServiceError as e:
-        # This is a handled error from one of our AI services (Whisper, Gemini, ElevenLabs)
-        # We return a specific 503 error to indicate a temporary downstream service failure.
-        print(f"A handled AI service error occurred: {e}")
+        # This is a handled error from one of our AI services.
+        # We return a 503 Service Unavailable status to indicate that a
+        # downstream service failed.
+        print(f"AI SERVICE ERROR: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"An AI service failed: {e}"
+            detail=f"A critical error occurred in an AI service: {e}"
         )
     except Exception as e:
-        # This catches any other unexpected errors in the pipeline.
-        print(f"An unhandled exception occurred in /talk endpoint: {e}")
+        # This catches any other unexpected errors during the process.
+        print(f"UNEXPECTED INTERNAL SERVER ERROR: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="A critical internal error occurred."
+            detail=f"An unexpected internal error occurred: {e}"
         )
 

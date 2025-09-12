@@ -1,51 +1,52 @@
 # app/database.py
-import re
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Import the settings function instead of the settings object
+# Import the settings GETTER function, not the settings object itself
 from .config import get_settings
 
-# These will hold the engine and session instances once they are created.
-# They are initialized as None at the global scope.
+# Define the base class for declarative models
+Base = declarative_base()
+
+# We initialize these as None. They will be populated during the app's startup.
 engine = None
 AsyncSessionLocal = None
 
-def initialize_db():
+async def initialize_db():
     """
-    Initializes the database connection using the settings.
-    This function is called during the application startup lifespan event,
-    ensuring that settings are fully loaded before a connection is attempted.
+    Initializes the database engine and session maker.
+    This function is called during the application's lifespan startup event.
     """
     global engine, AsyncSessionLocal
     
-    # Get the loaded settings
     settings = get_settings()
     
-    # Clean the database URL to be compatible with asyncpg driver
+    # Clean the database URL for asyncpg compatibility
+    # asyncpg does not recognize the 'sslmode' parameter, so we remove it.
     db_url = settings.database_url
-    if db_url.startswith("postgresql://"):
-        # The asyncpg driver requires the dialect to be 'postgresql+asyncpg'
-        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    
-    # Remove the sslmode query parameter if it exists, as it's not used by asyncpg
-    db_url = re.sub(r"\?sslmode=require$", "", db_url)
+    if db_url.startswith("postgresql://") and "?sslmode=require" in db_url:
+        db_url = db_url.replace("?sslmode=require", "")
 
-    print(f"Initializing database with URL: {db_url}")
-    engine = create_async_engine(db_url, echo=False)
+    # Create the asynchronous engine for SQLAlchemy
+    engine = create_async_engine(db_url)
+
+    # Create a configured "Session" class
     AsyncSessionLocal = sessionmaker(
-        autocommit=False, autoflush=False, bind=engine, class_=AsyncSession
+        autocommit=False, 
+        autoflush=False, 
+        bind=engine, 
+        class_=AsyncSession,
+        expire_on_commit=False
     )
 
-async def close_db_connection():
+async def get_db() -> AsyncSession:
     """
-    Closes the database connection pool gracefully.
-    This is called during the application shutdown lifespan event.
+    FastAPI dependency that provides a database session to the endpoints.
     """
-    if engine:
-        print("Closing database connection pool.")
-        await engine.dispose()
-
-# The Base class that our SQLAlchemy models will inherit from
-Base = declarative_base()
+    if AsyncSessionLocal is None:
+        raise RuntimeError("Database is not initialized. Call initialize_db() first.")
+    
+    async with AsyncSessionLocal() as session:
+        yield session
 

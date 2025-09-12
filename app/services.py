@@ -10,18 +10,18 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import Voice, VoiceSettings
 from google.api_core import exceptions as google_exceptions
 
-# Import the settings function, not the settings object directly
+# Import the settings GETTER function
 from .config import get_settings
-# Import the memory_manager instance from memory.py
+# Import the memory_manager instance (it will be initialized at startup)
 from .memory import memory_manager
 
-# --- Custom Exception for AI Service Failures ---
+# --- Custom Exception for clear error handling ---
 class AIServiceError(Exception):
-    """Custom exception for clear error handling in AI services."""
+    """Custom exception for AI service failures to be caught in the router."""
     pass
 
-# --- AI Client Initialization ---
-# These are initialized here but depend on settings being loaded first via get_settings()
+# --- Initialize clients using the settings getter ---
+# This ensures that settings are loaded before clients are created.
 settings = get_settings()
 openai_client = OpenAI(api_key=settings.openai_api_key)
 genai.configure(api_key=settings.google_api_key)
@@ -34,7 +34,7 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
     Converts an audio file to text using OpenAI's Whisper model.
     """
     try:
-        # Create a temporary file to store the uploaded audio content
+        # Save the uploaded file temporarily to disk
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp_file:
             content = await audio_file.read()
             tmp_file.write(content)
@@ -48,44 +48,46 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
         os.remove(tmp_file_path)
         return transcription.text
     except Exception as e:
-        print(f"Error during audio transcription: {e}")
+        print(f"ERROR - Whisper Transcription Failed: {e}")
         raise AIServiceError(f"Failed to transcribe audio: {e}")
 
 
 async def convert_text_to_speech_elevenlabs(text: str) -> bytes:
     """
-    Converts text to high-quality Persian speech using ElevenLabs API.
+    Converts text to speech using the ElevenLabs API.
+    This service is reliable in server environments.
     """
     try:
-        # Generate audio using the specified multilingual model and a pre-defined voice
-        audio_stream = elevenlabs_client.text_to_speech.convert(
-            voice_id="pNInz6obpgDQGcFmaJgB", # A good default voice like "Adam"
+        # Generate audio stream from the text
+        audio_stream = elevenlabs_client.generate(
             text=text,
-            model_id="eleven_multilingual_v2",
-            voice_settings=VoiceSettings(
-                stability=0.5,
-                similarity_boost=0.75,
-                use_speaker_boost=True
-            )
+            voice=Voice(
+                voice_id='Rachel', # A good, clear voice
+                settings=VoiceSettings(stability=0.71, similarity_boost=0.5, style=0.0, use_speaker_boost=True)
+            ),
+            model="eleven_multilingual_v2" # This model supports Persian
         )
-
-        # The response is a stream of chunks; we need to assemble them.
+        
+        # Collect the audio bytes from the stream
         audio_bytes = b"".join(chunk for chunk in audio_stream)
         
         if not audio_bytes:
-             raise AIServiceError("ElevenLabs returned an empty audio stream.")
-             
+            raise AIServiceError("ElevenLabs returned an empty audio stream.")
+            
         return audio_bytes
-        
     except Exception as e:
-        print(f"ElevenLabs API Error: {e}")
-        raise AIServiceError(f"ElevenLabs TTS failed: {e}")
+        print(f"ERROR - ElevenLabs TTS Failed: {e}")
+        raise AIServiceError(f"Failed to generate speech with ElevenLabs: {e}")
 
 
 async def get_gemini_response(user_text: str, child_id: str) -> str:
     """
-    Gets a contextual response from the Gemini model, including memory.
+    Gets a contextual response from the Gemini model using long-term memory.
     """
+    # Ensure memory_manager is initialized before using it.
+    if not memory_manager:
+        raise RuntimeError("Memory manager is not initialized.")
+
     try:
         # Retrieve relevant memories from Qdrant
         relevant_memories = await memory_manager.search_memory(
@@ -93,7 +95,7 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
             query_text=user_text
         )
 
-        # Construct the prompt with the persona and conversation history
+        # Create a detailed prompt for the AI
         prompt = f"""
         You are 'Abenek', a friendly, curious, and safe blue robot companion for a child.
         Your personality is warm, encouraging, and a little bit playful.
@@ -108,11 +110,11 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
         Your response in Persian:
         """
         
-        # Generate the response from Gemini
+        # Generate the AI's response
         response = await gemini_model.generate_content_async(prompt)
         ai_text = response.text
 
-        # Save the new interaction to long-term memory
+        # Save the new interaction to memory
         await memory_manager.save_to_memory(
             child_id=child_id,
             user_text=user_text,
@@ -121,9 +123,12 @@ async def get_gemini_response(user_text: str, child_id: str) -> str:
         
         return ai_text
     except google_exceptions.GoogleAPICallError as e:
-        print(f"Google Generative AI API Error: {e}")
-        raise AIServiceError(f"Google Generative AI failed: {getattr(e, 'message', str(e))}")
+        print(f"ERROR - Google Gemini API Failed: {e}")
+        error_details = str(e)
+        if hasattr(e, 'message'):
+            error_details = e.message
+        raise AIServiceError(f"Google Generative AI failed: {error_details}")
     except Exception as e:
-        print(f"An unexpected error occurred in Gemini response generation: {e}")
-        raise AIServiceError(f"Unexpected error in Gemini response generation: {e}")
+        print(f"ERROR - Unexpected error in Gemini response: {e}")
+        raise AIServiceError(f"An unexpected error occurred in Gemini response generation: {e}")
 

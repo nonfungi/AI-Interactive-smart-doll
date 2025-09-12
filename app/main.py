@@ -2,65 +2,56 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-# --- Import initializers and modules ---
-# We import the functions to initialize connections, not the instances themselves.
-from .database import initialize_db, close_db_connection, Base, engine
+# --- Import initializers and routers ---
+from .database import initialize_db, engine
 from .memory import initialize_memory_manager
 from .routers import users, children, dolls, conversation, auth
-from .config import get_settings
 
-# --- Lifespan Event Handler for Safe Startup and Shutdown ---
+# --- Lifespan event handler for application startup and shutdown ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Manages application startup and shutdown events.
-    This is the core of the new architecture, ensuring all connections
-    are established only after the app has started and settings are loaded.
+    This is the correct place to initialize database connections,
+    AI models, and other resources.
     """
     print("Server starting up...")
     
-    # Load settings once at the beginning
-    settings = get_settings()
-    
-    # --- Establish Connections ---
     try:
-        # Initialize the PostgreSQL database connection pool
-        initialize_db()
+        # --- Initialize Database Connection ---
+        # This will create the engine and tables if they don't exist.
+        await initialize_db()
+        print("Database tables checked/created successfully.")
         
-        # Connect and create database tables if they don't exist
-        async with engine.begin() as conn:
-            # Use conn.run_sync() to execute synchronous SQLAlchemy metadata operations
-            # await conn.run_sync(Base.metadata.drop_all) # Uncomment for testing to clear tables
-            await conn.run_sync(Base.metadata.create_all)
-            print("Database tables checked/created successfully.")
-        
-        # Initialize the Qdrant client (MemoryManager)
+        # --- Initialize Qdrant Memory Manager ---
+        # This ensures the connection to Qdrant happens only after settings are loaded.
         initialize_memory_manager()
+        print("Memory manager initialized successfully.")
 
     except Exception as e:
-        # If any part of the startup fails, log a fatal error and stop the application.
-        # This prevents the server from running in a broken state.
         print(f"FATAL ERROR DURING STARTUP: {e}")
+        # Raising an exception here will prevent the app from starting
+        # if the database or memory manager fails to initialize.
         raise RuntimeError("Could not initialize database or memory manager.") from e
     
-    # --- Application is now running ---
     yield
     
-    # --- Clean Up Connections on Shutdown ---
+    # --- Code here would run on shutdown ---
     print("Server shutting down...")
-    await close_db_connection()
+    if engine:
+        await engine.dispose()
+        print("Database connection pool closed.")
 
-
-# --- Main FastAPI Application Instance ---
+# --- Main FastAPI application instance ---
 app = FastAPI(
     title="AI Interactive Smart Doll API",
     description="The core API for the smart storytelling toy.",
     version="1.0.0",
-    lifespan=lifespan  # Connect the lifespan handler to the app
+    lifespan=lifespan # The lifespan manager is attached to the app here.
 )
 
-# --- Register API Routers ---
-# These define the different sections of our API (users, children, etc.)
+# --- Register API routers ---
+# Splitting routers into separate files keeps the main file clean.
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(children.router)
@@ -69,6 +60,6 @@ app.include_router(conversation.router)
 
 @app.get("/", tags=["Health Check"])
 async def root():
-    """A simple health check endpoint to confirm the API is running."""
+    """A simple health check endpoint."""
     return {"status": "ok", "message": "Welcome to the AI Interactive Smart Doll API!"}
 
