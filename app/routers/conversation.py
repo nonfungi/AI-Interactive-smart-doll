@@ -5,14 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException, status, Depends
 from fastapi.responses import StreamingResponse
 
+# --- FIX: Import the new OpenAI TTS function ---
 from ..services import (
     transcribe_audio, 
     get_gemini_response, 
-    convert_text_to_speech_elevenlabs,
+    convert_text_to_speech_openai, # Changed from ElevenLabs
     AIServiceError
 )
 from ..config import get_settings
-# Import the new dependency function and the type
 from ..memory import get_memory_manager, MemoryManager
 
 # --- Router Setup ---
@@ -26,7 +26,6 @@ async def talk(
     x_auth_token: Annotated[str, Header(description="The secret master token for the doll.")],
     child_id: Annotated[str, Form(description="The unique identifier for the child.")],
     audio_file: UploadFile = File(..., description="The audio file of the child's speech (.webm format recommended)."),
-    # --- FIX: Inject the memory manager as a dependency ---
     memory_manager: MemoryManager = Depends(get_memory_manager)
 ):
     """
@@ -49,13 +48,13 @@ async def talk(
         ai_response_text = await get_gemini_response(
             user_text=transcribed_text, 
             child_id=child_id,
-            # --- FIX: Pass the injected dependency to the service function ---
             memory_manager=memory_manager
         )
         print(f"AI response text: '{ai_response_text}'")
 
-        print("Converting response to speech with ElevenLabs...")
-        response_audio_bytes = await convert_text_to_speech_elevenlabs(ai_response_text)
+        # --- FIX: Call the new OpenAI TTS function ---
+        print("Converting response to speech with OpenAI...")
+        response_audio_bytes = await convert_text_to_speech_openai(ai_response_text) # Changed from ElevenLabs
         print("Speech conversion successful.")
 
         return StreamingResponse(io.BytesIO(response_audio_bytes), media_type="audio/mpeg")
@@ -72,3 +71,4 @@ async def talk(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="A critical internal error occurred."
         )
+
