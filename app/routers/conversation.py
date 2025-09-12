@@ -72,17 +72,3 @@ async def talk(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="A critical internal error occurred."
         )
-```
-
----
-### دستورات Git برای ارسال تغییرات
-پس از اعمال این سه تغییر، از این دستورات برای پوش کردن کدها استفاده کنید.
-
-**۱. اضافه کردن فایل‌های تغییریافته**
-```bash
-git add app/services.py app/memory.py app/routers/conversation.py
-```
-
-**۲. ثبت کردن تغییرات (Commit)**
-```bash
-git commit -m "refactor: Use dependency injection for MemoryManager"
