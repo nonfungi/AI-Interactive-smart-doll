@@ -71,12 +71,3 @@ async def serve_demo_ui():
 ### دستورات Git برای ارسال تغییرات
 پس از اعمال این تغییرات، از این دستورات برای پوش کردن کدها استفاده کنید.
 
-**۱. اضافه کردن فایل‌های جدید و تغییریافته**
-```bash
-git add app/main.py app/templates/demo.html
-```
-
-**۲. ثبت کردن تغییرات (Commit)**
-```bash
-git commit -m "feat: Serve interactive HTML demo from the root endpoint"
-
