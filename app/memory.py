@@ -4,41 +4,22 @@ import datetime
 from qdrant_client import QdrantClient, models
 from langchain_openai import OpenAIEmbeddings
 
-# Import the settings function instead of the settings object
 from .config import get_settings
 
-# This will act as a global placeholder for our memory manager instance.
-# It is initialized as None and will be populated during the app's startup.
 memory_manager = None
-
-def initialize_memory_manager():
-    """
-    Initializes the MemoryManager instance using the loaded settings.
-    This function is called during the application startup lifespan event,
-    ensuring that settings are fully loaded before a connection is attempted.
-    """
-    global memory_manager
-    if memory_manager is None:
-        print("Initializing MemoryManager and Qdrant client...")
-        memory_manager = MemoryManager()
-        print("MemoryManager initialized successfully.")
 
 class MemoryManager:
     def __init__(self):
-        # Get the fully loaded settings object
         settings = get_settings()
-        
-        # Initialize clients using the loaded settings
         self.client = QdrantClient(
             url=settings.qdrant_url, 
             api_key=settings.qdrant_api_key
         )
         self.embedding_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
-        self.collection_name = "toy_conversations_v3" # Renamed to ensure a fresh start
+        self.collection_name = "toy_conversations_v3"
         self.ensure_collection_exists()
 
     def ensure_collection_exists(self):
-        """Checks if the Qdrant collection exists, and creates it if not."""
         try:
             collections_response = self.client.get_collections()
             existing_collections = [c.name for c in collections_response.collections]
@@ -61,7 +42,6 @@ class MemoryManager:
             raise
 
     async def search_memory(self, child_id: str, query_text: str) -> str:
-        """Searches for relevant memories for a specific child."""
         query_vector = self.embedding_model.embed_query(query_text)
         search_results = self.client.search(
             collection_name=self.collection_name,
@@ -78,7 +58,6 @@ class MemoryManager:
         return memories
 
     async def save_to_memory(self, child_id: str, user_text: str, ai_text: str):
-        """Saves a new conversation turn to the child's memory."""
         vector = self.embedding_model.embed_query(user_text)
         self.client.upsert(
             collection_name=self.collection_name,
@@ -97,3 +76,16 @@ class MemoryManager:
             wait=True
         )
 
+def initialize_memory_manager():
+    """Initializes the global MemoryManager instance."""
+    global memory_manager
+    if memory_manager is None:
+        print("Initializing MemoryManager and Qdrant client...")
+        memory_manager = MemoryManager()
+        print("MemoryManager initialized successfully.")
+
+def get_memory_manager() -> MemoryManager:
+    """FastAPI dependency to get the initialized memory manager instance."""
+    if memory_manager is None:
+        raise RuntimeError("MemoryManager has not been initialized.")
+    return memory_manager
