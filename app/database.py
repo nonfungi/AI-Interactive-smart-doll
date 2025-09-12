@@ -1,36 +1,51 @@
-import urllib.parse
+# app/database.py
+import re
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from .config import settings
 
-# --- FINAL FIX: Clean the database URL for full asyncpg compatibility ---
-# Neon provides a URL with '?sslmode=require', which is a parameter for the psycopg2 driver.
-# The asyncpg driver handles SSL/TLS automatically and does not accept the 'sslmode' parameter.
-# This causes a TypeError. The solution is to parse the URL and remove any query parameters
-# before passing it to the engine.
+# Import the settings function instead of the settings object
+from .config import get_settings
 
-# Parse the original URL provided by the environment variable
-parsed_url = urllib.parse.urlparse(settings.database_url)
+# These will hold the engine and session instances once they are created.
+# They are initialized as None at the global scope.
+engine = None
+AsyncSessionLocal = None
 
-# Create a new URL components tuple, but with an empty query string.
-# This effectively removes '?sslmode=require' and any other potential parameters.
-clean_url_components = parsed_url._replace(query="")
+def initialize_db():
+    """
+    Initializes the database connection using the settings.
+    This function is called during the application startup lifespan event,
+    ensuring that settings are fully loaded before a connection is attempted.
+    """
+    global engine, AsyncSessionLocal
+    
+    # Get the loaded settings
+    settings = get_settings()
+    
+    # Clean the database URL to be compatible with asyncpg driver
+    db_url = settings.database_url
+    if db_url.startswith("postgresql://"):
+        # The asyncpg driver requires the dialect to be 'postgresql+asyncpg'
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    # Remove the sslmode query parameter if it exists, as it's not used by asyncpg
+    db_url = re.sub(r"\?sslmode=require$", "", db_url)
 
-# Rebuild the URL as a string from the cleaned components
-clean_url = urllib.parse.urlunparse(clean_url_components)
+    print(f"Initializing database with URL: {db_url}")
+    engine = create_async_engine(db_url, echo=False)
+    AsyncSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=engine, class_=AsyncSession
+    )
 
-# Now, replace the scheme to tell SQLAlchemy to use the asyncpg driver
-ASYNC_DATABASE_URL = clean_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+async def close_db_connection():
+    """
+    Closes the database connection pool gracefully.
+    This is called during the application shutdown lifespan event.
+    """
+    if engine:
+        print("Closing database connection pool.")
+        await engine.dispose()
 
-
-# The engine is now created with a clean URL that asyncpg can understand.
-engine = create_async_engine(ASYNC_DATABASE_URL)
-
-AsyncSessionLocal = sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
+# The Base class that our SQLAlchemy models will inherit from
 Base = declarative_base()
 

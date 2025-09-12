@@ -1,54 +1,74 @@
-import uvicorn
+# app/main.py
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 
-# --- Import routers and database components ---
-from .database import engine, Base
-from .routers import users, children, dolls, conversation
+# --- Import initializers and modules ---
+# We import the functions to initialize connections, not the instances themselves.
+from .database import initialize_db, close_db_connection, Base, engine
+from .memory import initialize_memory_manager
+from .routers import users, children, dolls, conversation, auth
+from .config import get_settings
 
-# --- Lifespan Event Handler (for startup and shutdown events) ---
+# --- Lifespan Event Handler for Safe Startup and Shutdown ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Handles application startup and shutdown events.
-    On startup, it ensures that all necessary database tables are created.
+    Manages application startup and shutdown events.
+    This is the core of the new architecture, ensuring all connections
+    are established only after the app has started and settings are loaded.
     """
     print("Server starting up...")
     
-    # --- NEW: Create database tables on startup ---
-    async with engine.begin() as conn:
-        # This command connects to the database and runs the SQL to create
-        # all tables that are defined in models.py, but only if they don't already exist.
-        await conn.run_sync(Base.metadata.create_all)
-        print("Database tables checked/created successfully.")
-        
-    yield # The application runs here
+    # Load settings once at the beginning
+    settings = get_settings()
     
-    print("Server shutting down...")
+    # --- Establish Connections ---
+    try:
+        # Initialize the PostgreSQL database connection pool
+        initialize_db()
+        
+        # Connect and create database tables if they don't exist
+        async with engine.begin() as conn:
+            # Use conn.run_sync() to execute synchronous SQLAlchemy metadata operations
+            # await conn.run_sync(Base.metadata.drop_all) # Uncomment for testing to clear tables
+            await conn.run_sync(Base.metadata.create_all)
+            print("Database tables checked/created successfully.")
+        
+        # Initialize the Qdrant client (MemoryManager)
+        initialize_memory_manager()
 
-# --- App Initialization ---
+    except Exception as e:
+        # If any part of the startup fails, log a fatal error and stop the application.
+        # This prevents the server from running in a broken state.
+        print(f"FATAL ERROR DURING STARTUP: {e}")
+        raise RuntimeError("Could not initialize database or memory manager.") from e
+    
+    # --- Application is now running ---
+    yield
+    
+    # --- Clean Up Connections on Shutdown ---
+    print("Server shutting down...")
+    await close_db_connection()
+
+
+# --- Main FastAPI Application Instance ---
 app = FastAPI(
     title="AI Interactive Smart Doll API",
     description="The core API for the smart storytelling toy.",
-    version="0.1.0",
-    lifespan=lifespan # Use the lifespan handler
+    version="1.0.0",
+    lifespan=lifespan  # Connect the lifespan handler to the app
 )
 
-# --- Include API Routers ---
-# This makes the main file clean and organizes endpoints into separate files.
-app.include_router(users.router, prefix="/users", tags=["Users"])
-app.include_router(children.router, prefix="/children", tags=["Children"])
-app.include_router(dolls.router, prefix="/dolls", tags=["Dolls"])
-app.include_router(conversation.router, tags=["Conversation"])
-
+# --- Register API Routers ---
+# These define the different sections of our API (users, children, etc.)
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(children.router)
+app.include_router(dolls.router)
+app.include_router(conversation.router)
 
 @app.get("/", tags=["Health Check"])
 async def root():
     """A simple health check endpoint to confirm the API is running."""
     return {"status": "ok", "message": "Welcome to the AI Interactive Smart Doll API!"}
-
-# --- Main Execution Block (for local development) ---
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8001, reload=True)
 
