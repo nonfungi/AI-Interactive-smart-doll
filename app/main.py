@@ -1,52 +1,36 @@
 # app/main.py
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+# --- FIX: Import FileResponse to serve HTML files ---
+from fastapi.responses import FileResponse
+import os
 
 # --- Import initializers and modules ---
-# Correct way: Import the database module itself, not the engine directly.
 from . import database
 from .memory import initialize_memory_manager
 from .routers import users, children, dolls, conversation, auth
 from .config import get_settings
 
-# --- Lifespan Event Handler for Safe Startup and Shutdown ---
+# --- Lifespan Event Handler ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Manages application startup and shutdown events.
-    This is the core of the new architecture, ensuring all connections
-    are established only after the app has started and settings are loaded.
-    """
     print("Server starting up...")
-    
-    # Load settings once at the beginning
     settings = get_settings()
     
-    # --- Establish Connections ---
     try:
-        # Initialize the PostgreSQL database connection pool. This will set database.engine.
         database.initialize_db()
-        
-        # Connect and create database tables if they don't exist
-        # Now, access the engine through the module to get the initialized instance.
         async with database.engine.begin() as conn:
-            # Use conn.run_sync() to execute synchronous SQLAlchemy metadata operations
-            # await conn.run_sync(database.Base.metadata.drop_all) # Uncomment for testing to clear tables
             await conn.run_sync(database.Base.metadata.create_all)
             print("Database tables checked/created successfully.")
         
-        # Initialize the Qdrant client (MemoryManager)
         initialize_memory_manager()
 
     except Exception as e:
-        # If any part of the startup fails, log a fatal error and stop the application.
         print(f"FATAL ERROR DURING STARTUP: {e}")
-        raise RuntimeError("Could not initialize database or memory manager.") from e
+        raise RuntimeError("Could not initialize services.") from e
     
-    # --- Application is now running ---
     yield
     
-    # --- Clean Up Connections on Shutdown ---
     print("Server shutting down...")
     await database.close_db_connection()
 
@@ -56,18 +40,43 @@ app = FastAPI(
     title="AI Interactive Smart Doll API",
     description="The core API for the smart storytelling toy.",
     version="1.0.0",
-    lifespan=lifespan  # Connect the lifespan handler to the app
+    lifespan=lifespan
 )
 
 # --- Register API Routers ---
-# These define the different sections of our API (users, children, etc.)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(children.router)
 app.include_router(dolls.router)
 app.include_router(conversation.router)
 
-@app.get("/", tags=["Health Check"])
-async def root():
-    """A simple health check endpoint to confirm the API is running."""
-    return {"status": "ok", "message": "Welcome to the AI Interactive Smart Doll API!"}
+# --- FIX: Serve the HTML Demo UI at the root URL ---
+# Get the path to the templates directory
+templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+
+@app.get("/", tags=["UI Demo"])
+async def serve_demo_ui():
+    """
+    Serves the main HTML user interface for the live demo.
+    """
+    html_file_path = os.path.join(templates_dir, "demo.html")
+    if os.path.exists(html_file_path):
+        return FileResponse(html_file_path)
+    return {"error": "demo.html not found"}
+```
+
+### نتیجه
+با این تغییرات، هر کسی که به آدرس اصلی Space شما در هاگینگ فیس برود (مثلاً `https://your-username-your-space.hf.space/`)، مستقیماً با رابط کاربری دموی شما مواجه خواهد شد و می‌تواند با عروسک هوشمند صحبت کند.
+
+### دستورات Git برای ارسال تغییرات
+پس از اعمال این تغییرات، از این دستورات برای پوش کردن کدها استفاده کنید.
+
+**۱. اضافه کردن فایل‌های جدید و تغییریافته**
+```bash
+git add app/main.py app/templates/demo.html
+```
+
+**۲. ثبت کردن تغییرات (Commit)**
+```bash
+git commit -m "feat: Serve interactive HTML demo from the root endpoint"
+
