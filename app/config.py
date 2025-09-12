@@ -43,3 +43,4 @@ def get_settings() -> Settings:
     print("Settings loaded successfully.")
     return settings
 
+settings = get_settings()
