@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 # --- Import initializers and modules ---
-# We import the functions to initialize connections, not the instances themselves.
-from .database import initialize_db, close_db_connection, Base, engine
+# Correct way: Import the database module itself, not the engine directly.
+from . import database
 from .memory import initialize_memory_manager
 from .routers import users, children, dolls, conversation, auth
 from .config import get_settings
@@ -24,14 +24,15 @@ async def lifespan(app: FastAPI):
     
     # --- Establish Connections ---
     try:
-        # Initialize the PostgreSQL database connection pool
-        initialize_db()
+        # Initialize the PostgreSQL database connection pool. This will set database.engine.
+        database.initialize_db()
         
         # Connect and create database tables if they don't exist
-        async with engine.begin() as conn:
+        # Now, access the engine through the module to get the initialized instance.
+        async with database.engine.begin() as conn:
             # Use conn.run_sync() to execute synchronous SQLAlchemy metadata operations
-            # await conn.run_sync(Base.metadata.drop_all) # Uncomment for testing to clear tables
-            await conn.run_sync(Base.metadata.create_all)
+            # await conn.run_sync(database.Base.metadata.drop_all) # Uncomment for testing to clear tables
+            await conn.run_sync(database.Base.metadata.create_all)
             print("Database tables checked/created successfully.")
         
         # Initialize the Qdrant client (MemoryManager)
@@ -39,7 +40,6 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         # If any part of the startup fails, log a fatal error and stop the application.
-        # This prevents the server from running in a broken state.
         print(f"FATAL ERROR DURING STARTUP: {e}")
         raise RuntimeError("Could not initialize database or memory manager.") from e
     
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
     
     # --- Clean Up Connections on Shutdown ---
     print("Server shutting down...")
-    await close_db_connection()
+    await database.close_db_connection()
 
 
 # --- Main FastAPI Application Instance ---
@@ -71,4 +71,3 @@ app.include_router(conversation.router)
 async def root():
     """A simple health check endpoint to confirm the API is running."""
     return {"status": "ok", "message": "Welcome to the AI Interactive Smart Doll API!"}
-
