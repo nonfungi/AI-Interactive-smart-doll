@@ -63,11 +63,4 @@ async def serve_demo_ui():
     if os.path.exists(html_file_path):
         return FileResponse(html_file_path)
     return {"error": "demo.html not found"}
-```
-
-### نتیجه
-با این تغییرات، هر کسی که به آدرس اصلی Space شما در هاگینگ فیس برود (مثلاً `https://your-username-your-space.hf.space/`)، مستقیماً با رابط کاربری دموی شما مواجه خواهد شد و می‌تواند با عروسک هوشمند صحبت کند.
-
-### دستورات Git برای ارسال تغییرات
-پس از اعمال این تغییرات، از این دستورات برای پوش کردن کدها استفاده کنید.
 
