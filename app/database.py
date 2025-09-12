@@ -11,6 +11,9 @@ from .config import get_settings
 engine = None
 AsyncSessionLocal = None
 
+# The Base class that our SQLAlchemy models will inherit from
+Base = declarative_base()
+
 def initialize_db():
     """
     Initializes the database connection using the settings.
@@ -46,6 +49,19 @@ async def close_db_connection():
         print("Closing database connection pool.")
         await engine.dispose()
 
-# The Base class that our SQLAlchemy models will inherit from
-Base = declarative_base()
+# --- The Missing Dependency Function ---
+# This is the function that your endpoints (like in auth.py and users.py) will use.
+async def get_db() -> AsyncSession:
+    """
+    FastAPI dependency that provides a database session for a single request.
+    It ensures the session is always closed after the request is finished.
+    """
+    # AsyncSessionLocal must be initialized before this function is called.
+    if AsyncSessionLocal is None:
+        raise RuntimeError("Database not initialized. Call initialize_db() first.")
 
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
